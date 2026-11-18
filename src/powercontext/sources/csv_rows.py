@@ -1,4 +1,5 @@
 import csv
+import io
 from dataclasses import dataclass
 from typing import Iterable
 from urllib.parse import quote
@@ -26,14 +27,15 @@ class CsvRowSource(SourceDefinition[CsvRowInput, CsvRowOutput]):
 
     def parse(self, inp: CsvRowInput) -> Iterable[CsvRowOutput]:
         doc_bytes = inp.document
-        # 处理UTF-8 BOM
+        # UTF-8 BOM 处理
         if doc_bytes.startswith(b"\xef\xbb\xbf"):
             text = doc_bytes[3:].decode("utf-8")
         else:
             text = doc_bytes.decode("utf-8")
 
-        lines = text.splitlines()
-        reader = csv.DictReader(lines)
+        # 核心修复：使用 io.StringIO，交给csv原生处理换行，支持单元格内带引号换行
+        f = io.StringIO(text, newline="")
+        reader = csv.DictReader(f)
         headers = tuple(reader.fieldnames) if reader.fieldnames else ()
 
         seen_keys = set()
@@ -47,7 +49,6 @@ class CsvRowSource(SourceDefinition[CsvRowInput, CsvRowOutput]):
                 raise ValueError(f"duplicate primary key: {pk_val}")
             seen_keys.add(pk_val)
 
-            # 按表头顺序组装元组
             row_tuple = tuple((h, row_dict[h]) for h in headers)
             row_key = quote(pk_val, safe="")
 
